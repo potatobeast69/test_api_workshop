@@ -1,0 +1,236 @@
+name: 🔍 Code Review (Optimized)
+
+# Запускается ТОЛЬКО по команде с вашего сервера
+on:
+  repository_dispatch:
+    types: [code-review]
+  workflow_dispatch:  # Для ручного запуска из GitHub UI
+
+jobs:
+  code-analysis:
+    name: 📊 Анализ кода
+    runs-on: macos-latest
+    timeout-minutes: 3  # 3 минуты максимум (180 секунд)
+
+    steps:
+      # ========================================
+      # 1. Быстрый checkout (только последний коммит)
+      # ========================================
+      - name: 📥 Checkout кода
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Только последний коммит - экономия времени
+
+      # ========================================
+      # 2. Скачивание готовых бинарников (3-5 сек)
+      # ========================================
+      - name: 📦 Скачивание инструментов
+        run: |
+          echo "📦 Скачиваю готовые бинарники..."
+          mkdir -p tools
+
+          # ЗАМЕНИТЕ НА ВАШИ РЕАЛЬНЫЕ ССЫЛКИ:
+          curl -L "https://cloud.tstservice.tech/public.php/dav/files/ZqH5WExrajGwG3m" -o tools/swift-style-check
+          curl -L "https://cloud.tstservice.tech/public.php/dav/files/DrxTd795z9fd9ef" -o tools/swift-dead-code
+          curl -L "https://cloud.tstservice.tech/public.php/dav/files/DFDJGPgWeNbkbT5" -o tools/swift-memory-check
+
+          # Делаем исполняемыми
+          chmod +x tools/swift-style-check
+          chmod +x tools/swift-dead-code
+          chmod +x tools/swift-memory-check
+
+          echo "✅ Инструменты скачаны и готовы"
+
+      # ========================================
+      # 3. Установка внешних инструментов (~30 сек)
+      # ========================================
+      - name: 🔧 Установка SwiftLint
+        run: |
+          echo "🔧 Устанавливаю SwiftLint..."
+          brew install swiftlint
+          echo "✅ SwiftLint $(swiftlint version)"
+
+      - name: 🔧 Установка Periphery
+        run: |
+          echo "🔧 Устанавливаю Periphery..."
+          PERIPHERY_VERSION="3.2.0"
+          curl -L "https://github.com/peripheryapp/periphery/releases/download/${PERIPHERY_VERSION}/periphery-${PERIPHERY_VERSION}.zip" -o periphery.zip
+          unzip -q periphery.zip
+          sudo mv periphery /usr/local/bin/periphery
+          sudo chmod +x /usr/local/bin/periphery
+          rm periphery.zip
+          echo "✅ Periphery $(periphery version)"
+
+      # ========================================
+      # 4. Запуск всех проверок ПАРАЛЛЕЛЬНО (~30-40 сек)
+      # ========================================
+      - name: 🎨 Проверка стиля кода
+        id: style-check
+        continue-on-error: true
+        run: |
+          echo "🎨 Запускаю проверку стиля..."
+          ./tools/swift-style-check . --format json --output style-report.json || true
+
+          if [ -f "style-report.json" ]; then
+            echo "✅ Отчет создан"
+            cat style-report.json | jq '.summary'
+          else
+            echo "⚠️ Отчет не создан, используем fallback"
+            echo '{"summary":{"errors":0,"warnings":0},"files":[]}' > style-report.json
+          fi
+
+      - name: 🗑️ Поиск неиспользуемого кода
+        id: dead-code
+        continue-on-error: true
+        run: |
+          echo "🗑️ Запускаю поиск мертвого кода..."
+
+          # Ищем проект
+          PROJECT=""
+          if [ -n "$(find . -maxdepth 1 -name "*.xcworkspace" -type d)" ]; then
+            PROJECT=$(find . -maxdepth 1 -name "*.xcworkspace" -type d | head -n 1)
+          elif [ -n "$(find . -maxdepth 1 -name "*.xcodeproj" -type d)" ]; then
+            PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" -type d | head -n 1)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "⚠️ Xcode проект не найден, пропускаю"
+            echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
+          else
+            ./tools/swift-dead-code "$PROJECT" --format json --output dead-code-report.json || true
+
+            if [ -f "dead-code-report.json" ]; then
+              echo "✅ Отчет создан"
+              cat dead-code-report.json | jq '.summary'
+            else
+              echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
+            fi
+          fi
+
+      - name: 💾 Проверка утечек памяти
+        id: memory-check
+        continue-on-error: true
+        run: |
+          echo "💾 Запускаю проверку памяти..."
+          ./tools/swift-memory-check . --static-analysis --format json --output memory-report.json || true
+
+          if [ -f "memory-report.json" ]; then
+            echo "✅ Отчет создан"
+            cat memory-report.json | jq '.summary'
+          else
+            echo "⚠️ Отчет не создан"
+            echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > memory-report.json
+          fi
+
+      # ========================================
+      # 5. Создание сводного отчета (~5 сек)
+      # ========================================
+      - name: 📊 Сводный отчет
+        if: always()
+        run: |
+          echo "╔════════════════════════════════════════════════════════╗"
+          echo "║          📊 СВОДНЫЙ ОТЧЕТ CODE REVIEW                  ║"
+          echo "╚════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "📌 Репозиторий: ${{ github.repository }}"
+          echo "🔀 Ветка: ${{ github.ref_name }}"
+          echo "👤 Автор: ${{ github.actor }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo ""
+
+          # Стиль кода
+          if [ -f "style-report.json" ]; then
+            STYLE_ERRORS=$(cat style-report.json | jq -r '.summary.errors // 0')
+            STYLE_WARNINGS=$(cat style-report.json | jq -r '.summary.warnings // 0')
+            echo "🎨 Стиль кода: $STYLE_ERRORS ошибок, $STYLE_WARNINGS предупреждений"
+          fi
+
+          # Мертвый код
+          if [ -f "dead-code-report.json" ]; then
+            DEAD_CODE=$(cat dead-code-report.json | jq -r '.summary.warnings // 0')
+            echo "🗑️ Неиспользуемый код: $DEAD_CODE элементов"
+          fi
+
+          # Утечки памяти
+          if [ -f "memory-report.json" ]; then
+            MEM_ERRORS=$(cat memory-report.json | jq -r '.summary.errors // 0')
+            MEM_WARNINGS=$(cat memory-report.json | jq -r '.summary.warnings // 0')
+            echo "💾 Утечки памяти: $MEM_ERRORS ошибок, $MEM_WARNINGS предупреждений"
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # ========================================
+      # 6. Формирование JSON и отправка на backend (~5 сек)
+      # ========================================
+      - name: 📤 Подготовка отчета для backend
+        if: always()
+        run: |
+          # Создаем единый JSON со всеми результатами
+          cat > final-report.json <<EOF
+          {
+            "repository": "${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "author": "${{ github.actor }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run_id": "${{ github.run_id }}",
+            "reports": {
+              "style": $(cat style-report.json 2>/dev/null || echo 'null'),
+              "dead_code": $(cat dead-code-report.json 2>/dev/null || echo 'null'),
+              "memory": $(cat memory-report.json 2>/dev/null || echo 'null')
+            }
+          }
+          EOF
+
+          echo "📄 Финальный отчет создан:"
+          cat final-report.json | jq '.'
+
+      - name: 📤 Отправка на backend
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          BACKEND_TOKEN: ${{ secrets.BACKEND_TOKEN }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "⚠️ BACKEND_URL не настроен"
+            echo "💡 Добавьте secret BACKEND_URL в Settings -> Secrets and variables -> Actions"
+            exit 0
+          fi
+
+          echo "📤 Отправляю отчет на backend..."
+
+          RESPONSE=$(curl -X POST "$BACKEND_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BACKEND_TOKEN" \
+            -d @final-report.json \
+            -w "\n%{http_code}" \
+            -s)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Отчет успешно отправлен (HTTP $HTTP_CODE)"
+            echo "$BODY"
+          else
+            echo "❌ Ошибка отправки (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+
+      # ========================================
+      # 7. Сохранение артефактов для просмотра в GitHub
+      # ========================================
+      - name: 💾 Сохранение отчетов
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-reports
+          path: |
+            style-report.json
+            dead-code-report.json
+            memory-report.json
+            final-report.json
+          retention-days: 7

@@ -1,0 +1,100 @@
+name: 🔨 Build Check
+
+# Отдельный workflow для проверки компиляции
+# Запускается отдельной командой с вашего сервера
+on:
+  repository_dispatch:
+    types: [build-check]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 🔨 Проверка компиляции
+    runs-on: macos-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout кода
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 💾 Кеш SPM зависимостей
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: 📋 Информация о среде
+        run: |
+          echo "Xcode: $(xcodebuild -version)"
+          echo "Swift: $(swift --version)"
+          echo "macOS: $(sw_vers -productVersion)"
+
+      - name: 🔨 Сборка проекта
+        id: build
+        run: |
+          if [ -f "Package.swift" ]; then
+            echo "📦 Swift Package обнаружен"
+            swift build
+          elif find . -maxdepth 1 -name "*.xcworkspace" | grep -q .; then
+            WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n 1)
+            WORKSPACE_NAME=$(basename "$WORKSPACE")
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list | grep -A 1 "Schemes:" | tail -n 1 | xargs)
+            echo "🔨 Собираю workspace: $WORKSPACE_NAME, схема: $SCHEME"
+            xcodebuild -workspace "$WORKSPACE_NAME" -scheme "$SCHEME" \
+              -destination "platform=iOS Simulator,name=iPhone 16" \
+              -configuration Debug clean build
+          elif find . -maxdepth 1 -name "*.xcodeproj" | grep -q .; then
+            PROJECT=$(find . -maxdepth 1 -name "*.xcodeproj" | head -n 1)
+            PROJECT_NAME=$(basename "$PROJECT")
+            SCHEME=$(xcodebuild -project "$PROJECT_NAME" -list | grep -A 1 "Schemes:" | tail -n 1 | xargs)
+            echo "🔨 Собираю проект: $PROJECT_NAME, схема: $SCHEME"
+            xcodebuild -project "$PROJECT_NAME" -scheme "$SCHEME" \
+              -destination "platform=iOS Simulator,name=iPhone 16" \
+              -configuration Debug clean build
+          else
+            echo "❌ Swift проект не найден"
+            exit 1
+          fi
+
+      - name: 📊 Результат сборки
+        if: always()
+        run: |
+          if [ "${{ steps.build.outcome }}" == "success" ]; then
+            echo "✅ Проект успешно скомпилирован!"
+          else
+            echo "❌ Ошибка компиляции!"
+          fi
+
+      - name: 📤 Отправка результата на backend
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          BACKEND_TOKEN: ${{ secrets.BACKEND_TOKEN }}
+        run: |
+          cat > build-report.json <<EOF
+          {
+            "repository": "${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "author": "${{ github.actor }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run_id": "${{ github.run_id }}",
+            "build_status": "${{ steps.build.outcome }}",
+            "build_time": "${{ steps.build.outputs.time }}"
+          }
+          EOF
+
+          if [ -n "$BACKEND_URL" ]; then
+            curl -X POST "$BACKEND_URL/build-check" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $BACKEND_TOKEN" \
+              -d @build-report.json
+          else
+            echo "⚠️ BACKEND_URL не настроен"
+          fi
