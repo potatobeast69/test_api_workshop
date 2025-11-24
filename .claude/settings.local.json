@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/halftime/Desktop/TemplateResult/.github/workflows/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

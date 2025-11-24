@@ -21,6 +21,7 @@ jobs:
 
       - name: 💾 Кеш SPM зависимостей
         uses: actions/cache@v4
+        continue-on-error: true
         with:
           path: |
             .build
