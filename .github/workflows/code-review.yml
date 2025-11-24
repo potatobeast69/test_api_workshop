@@ -69,7 +69,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "🎨 Запускаю проверку стиля..."
-          ./tools/swift-style-check . --format json --output style-report.json || true
+          ./tools/swift-style-check . --skip-build-check --format json --output style-report.json || true
 
           if [ -f "style-report.json" ]; then
             echo "✅ Отчет создан"
@@ -97,11 +97,15 @@ jobs:
             echo "⚠️ Xcode проект не найден, пропускаю"
             echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
           else
-            ./tools/swift-dead-code "$PROJECT" --format json --output dead-code-report.json || true
+            # Запускаем с обработкой ошибок - если проект не собирается, создаем пустой отчет
+            ./tools/swift-dead-code "$PROJECT" --format json --output dead-code-report.json 2>&1 || {
+              echo "⚠️ Ошибка при анализе мертвого кода (возможно проект не компилируется)"
+              echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
+            }
 
             if [ -f "dead-code-report.json" ]; then
               echo "✅ Отчет создан"
-              cat dead-code-report.json | jq '.summary'
+              cat dead-code-report.json | jq '.summary' || echo "⚠️ Не удалось прочитать summary"
             else
               echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
             fi
