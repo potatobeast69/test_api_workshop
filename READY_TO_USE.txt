@@ -1,0 +1,176 @@
+========================================
+   ГОТОВЫЕ ЭНДПОИНТЫ ДЛЯ ВАШЕГО СЕРВЕРА
+========================================
+
+Репозиторий: potatobeast69/test_api_workshop
+
+========================================
+1. CODE REVIEW (быстрый, ~90 сек)
+========================================
+
+URL:
+https://api.github.com/repos/potatobeast69/test_api_workshop/dispatches
+
+Метод: POST
+
+Headers:
+Authorization: Bearer YOUR_GITHUB_TOKEN_HERE
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+Content-Type: application/json
+
+Body (JSON):
+{
+  "event_type": "code-review",
+  "client_payload": {
+    "triggered_by": "backend-server"
+  }
+}
+
+cURL команда:
+curl -X POST \
+  -H "Authorization: Bearer YOUR_GITHUB_TOKEN_HERE" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/repos/potatobeast69/test_api_workshop/dispatches \
+  -d '{"event_type":"code-review","client_payload":{"triggered_by":"backend"}}'
+
+Успешный ответ: HTTP 204 No Content
+
+
+========================================
+2. BUILD CHECK (медленный, ~3-5 мин)
+========================================
+
+URL:
+https://api.github.com/repos/potatobeast69/test_api_workshop/dispatches
+
+Метод: POST
+
+Headers:
+Authorization: Bearer YOUR_GITHUB_TOKEN_HERE
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+Content-Type: application/json
+
+Body (JSON):
+{
+  "event_type": "build-check",
+  "client_payload": {
+    "triggered_by": "backend-server"
+  }
+}
+
+cURL команда:
+curl -X POST \
+  -H "Authorization: Bearer YOUR_GITHUB_TOKEN_HERE" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/repos/potatobeast69/test_api_workshop/dispatches \
+  -d '{"event_type":"build-check","client_payload":{"triggered_by":"backend"}}'
+
+Успешный ответ: HTTP 204 No Content
+
+
+========================================
+КАК ПОЛУЧИТЬ GITHUB_TOKEN
+========================================
+
+1. Откройте: https://github.com/settings/tokens
+2. Нажмите: "Generate new token (classic)"
+3. Выберите права: repo (все подпункты)
+4. Нажмите: "Generate token"
+5. Скопируйте токен (начинается с ghp_...)
+
+
+========================================
+НАСТРОЙКА WEBHOOK ДЛЯ ПОЛУЧЕНИЯ РЕЗУЛЬТАТОВ
+========================================
+
+1. Откройте: https://github.com/potatobeast69/test_api_workshop/settings/secrets/actions
+2. Нажмите: "New repository secret"
+3. Добавьте:
+   - Name: BACKEND_URL
+   - Secret: URL вашего сервера для получения результатов
+4. Нажмите: "Add secret"
+
+Опционально (для авторизации):
+   - Name: BACKEND_TOKEN
+   - Secret: токен для авторизации запросов
+
+
+========================================
+ФОРМАТ РЕЗУЛЬТАТОВ (приходят на BACKEND_URL)
+========================================
+
+Code Review (POST на ваш BACKEND_URL):
+{
+  "repository": "potatobeast69/test_api_workshop",
+  "branch": "main",
+  "commit": "abc123...",
+  "author": "potatobeast69",
+  "timestamp": "2025-11-24T12:00:00Z",
+  "workflow_run_id": "123456789",
+  "reports": {
+    "style": {
+      "summary": {"errors": 1, "warnings": 5, "infos": 0},
+      "issues": [...]
+    },
+    "memory": {
+      "summary": {"errors": 0, "warnings": 2, "infos": 0},
+      "issues": [...]
+    }
+  }
+}
+
+Build Check (POST на ваш BACKEND_URL):
+{
+  "repository": "potatobeast69/test_api_workshop",
+  "branch": "main",
+  "commit": "abc123...",
+  "author": "potatobeast69",
+  "timestamp": "2025-11-24T12:00:00Z",
+  "workflow_run_id": "123456789",
+  "build_status": "success",
+  "build_time": "180s"
+}
+
+
+========================================
+ПРОВЕРКА СТАТУСА WORKFLOW
+========================================
+
+Список всех запусков:
+GET https://api.github.com/repos/potatobeast69/test_api_workshop/actions/runs
+Headers: Authorization: Bearer YOUR_GITHUB_TOKEN_HERE
+
+Детали конкретного запуска:
+GET https://api.github.com/repos/potatobeast69/test_api_workshop/actions/runs/{RUN_ID}
+Headers: Authorization: Bearer YOUR_GITHUB_TOKEN_HERE
+
+
+========================================
+ТЕСТИРОВАНИЕ
+========================================
+
+Используйте локальный скрипт для тестирования:
+
+1. Откройте файл test-triggers.sh
+2. Замените переменные на свои:
+   GITHUB_TOKEN="ghp_ваш_токен"
+   GITHUB_OWNER="potatobeast69"
+   GITHUB_REPO="test_api_workshop"
+3. Запустите: ./trigger-workflows.sh
+4. Выберите нужный workflow
+
+
+========================================
+КОДЫ ОШИБОК
+========================================
+
+204 - ✅ Успешно запущено
+401 - ❌ Неверный токен
+404 - ❌ Репозиторий не найден
+422 - ❌ Неверный формат запроса
