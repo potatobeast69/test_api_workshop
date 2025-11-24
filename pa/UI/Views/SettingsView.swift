@@ -46,7 +46,7 @@ struct SettingsView: View {
                     Section("Legal") {
                         Button(action: {
                             ShroudUtilities.openTerms()
-                        }) {[
+                        }) {
                             HStack {
                                 Text("Terms of Use")
                                     .foregroundColor(ColorPalette.text(for: colorScheme))
