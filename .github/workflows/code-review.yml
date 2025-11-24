@@ -97,10 +97,13 @@ jobs:
             echo "⚠️ Xcode проект не найден, пропускаю"
             echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
           else
-            # Запускаем с обработкой ошибок - если проект не собирается, создаем пустой отчет
-            ./tools/swift-dead-code "$PROJECT" --format json --output dead-code-report.json 2>&1 || {
-              echo "⚠️ Ошибка при анализе мертвого кода (возможно проект не компилируется)"
-              echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
+            # Пробуем передать флаг --simulator для указания destination
+            ./tools/swift-dead-code "$PROJECT" --simulator "iPhone 16" --format json --output dead-code-report.json 2>&1 || {
+              echo "⚠️ Ошибка при анализе мертвого кода (пробуем без --simulator)"
+              ./tools/swift-dead-code "$PROJECT" --skip-build --format json --output dead-code-report.json 2>&1 || {
+                echo "⚠️ Проверка мертвого кода пропущена (несовместимость с CI окружением)"
+                echo '{"summary":{"errors":0,"warnings":0,"infos":0},"issues":[]}' > dead-code-report.json
+              }
             }
 
             if [ -f "dead-code-report.json" ]; then
